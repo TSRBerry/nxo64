@@ -15,10 +15,10 @@
 
 from __future__ import print_function
 
-from .compat import *
-from .consts import *
+from nxo64.compat import *
+from nxo64.consts import *
 
-from files import load_nxo
+from nxo64.files import load_nxo
 
 try:
     import idaapi

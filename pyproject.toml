@@ -17,6 +17,13 @@ classifiers = [
     "License :: OSI Approved :: ISC License (ISCL)",
     "Operating System :: OS Independent",
 ]
+
 [project.urls]
 "Github" = "https://github.com/TSRBerry/nxo64"
 "ReSwitched" = "https://github.com/reswitched"
+
+[tool.hatch.build]
+only-packages = true
+include = [
+  "nxo64/",
+]

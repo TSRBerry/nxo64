@@ -6,7 +6,7 @@ from io import BytesIO
 
 from lz4.block import decompress as uncompress
 
-from collections.builder import SegmentBuilder
+from memory.builder import SegmentBuilder
 from compat import iter_range, ascii_string
 from consts import MULTIPLE_DTS, DT, R_AArch64, R_Arm
 from nxo_exceptions import NxoException

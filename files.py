@@ -6,12 +6,12 @@ from io import BytesIO
 
 from lz4.block import decompress as uncompress
 
-from memory.builder import SegmentBuilder
-from compat import iter_range, ascii_string
-from consts import MULTIPLE_DTS, DT, R_AArch64, R_Arm
-from nxo_exceptions import NxoException
-from symbols import ElfSym
-from utils import kip1_blz_decompress
+from .memory.builder import SegmentBuilder
+from .compat import iter_range, ascii_string
+from .consts import MULTIPLE_DTS, DT, R_AArch64, R_Arm
+from .nxo_exceptions import NxoException
+from .symbols import ElfSym
+from .utils import kip1_blz_decompress
 
 
 def load_nxo(fileobj):

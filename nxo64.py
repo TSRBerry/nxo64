@@ -15,8 +15,8 @@
 
 from __future__ import print_function
 
-from compat import *
-from consts import *
+from .compat import *
+from .consts import *
 
 from files import load_nxo
 

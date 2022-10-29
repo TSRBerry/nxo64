@@ -1,6 +1,6 @@
 import struct
 
-from compat import bytes_to_list, iter_range, list_to_bytes
+from .compat import bytes_to_list, iter_range, list_to_bytes
 
 
 def kip1_blz_decompress(compressed):

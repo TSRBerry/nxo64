@@ -1,12 +1,7 @@
-nxo64.py
+nxo64
 ========
 
-nxo64.py is an IDAPython loader for NSO / NRO files.
-
-kernel50.py
-========
-
-kernel50.py is an IDAPython loader for the Nintendo Switch kernel (Firmware 5.0.0+).
+nxo64 is a python (2 & 3) library for reading NSO / NRO files and an IDAPython loader.
 
 Installation
 ============
@@ -14,3 +9,12 @@ Installation
 Install the `requirements.txt` modules so that IDAPython can import them.
 
 Copy `nxo64.py` into IDA's `loaders` directory.
+
+Credits
+=======
+
+I want to thank the following people for their help and/or other involvement with this or the original project:
+
+- [@ReSwitched](https://github.com/reswitched) for creating [loaders](https://github.com/reswitched/loaders).
+- [@SciresM](https://github.com/SciresM) for sharing the fixes for `kip1_blz_decompress()`.
+- [@hthh](https://github.com/hthh) for creating [switch-reversing](https://github.com/hthh/switch-reversing), which contains a modified version of `nxo64.py`. Some modifications are integrated into this repo. 

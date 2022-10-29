@@ -1,0 +1,2 @@
+class NxoException(Exception):
+    pass

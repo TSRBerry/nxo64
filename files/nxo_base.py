@@ -1,0 +1,246 @@
+from __future__ import print_function
+
+import re
+import struct
+from io import BytesIO
+
+from ..compat import ascii_string, iter_range
+from ..files.bin import BinFile
+from ..elf_sym import ElfSym
+from ..collections import SegmentBuilder
+from ..consts import *
+from ..exceptions import NxoException
+
+
+class NxoFileBase(object):
+    # segment = (content, file offset, vaddr, vsize)
+    def __init__(self, text, ro, data, bsssize):
+        self.text = text
+        self.ro = ro
+        self.data = data
+        self.bsssize = bsssize
+        self.textoff = text[2]
+        self.textsize = text[3]
+        self.rodataoff = ro[2]
+        self.rodatasize = ro[3]
+        self.dataoff = data[2]
+        flatsize = data[2] + data[3]
+
+        full = text[0]
+        if ro[2] >= len(full):
+            full += b'\x00' * (ro[2] - len(full))
+        else:
+            print('truncating .text?')
+            full = full[:ro[2]]
+        full += ro[0]
+        if data[2] > len(full):
+            full += b'\x00' * (data[2] - len(full))
+        else:
+            print('truncating .rodata?')
+        full += data[0]
+        f = BinFile(BytesIO(full))
+
+        self.binfile = f
+
+        # read MOD
+        self.modoff = f.read_from('I', 4)
+
+        f.seek(self.modoff)
+        if f.read('4s') != b'MOD0':
+            raise NxoException('invalid MOD0 magic')
+
+        self.dynamicoff = self.modoff + f.read('i')
+        self.bssoff = self.modoff + f.read('i')
+        self.bssend = self.modoff + f.read('i')
+        self.unwindoff = self.modoff + f.read('i')
+        self.unwindend = self.modoff + f.read('i')
+        self.moduleoff = self.modoff + f.read('i')
+
+        self.datasize = self.bssoff - self.dataoff
+        self.bsssize = self.bssend - self.bssoff
+
+        self.isLibnx = False
+        if f.read('4s') == 'LNY0':
+            self.isLibnx = True
+            self.libnx_got_start = self.modoff + f.read('i')
+            self.libnx_got_end = self.modoff + f.read('i')
+
+        self.segment_builder = builder = SegmentBuilder()
+        for off, sz, name, kind in [
+            (self.textoff, self.textsize, ".text", "CODE"),
+            (self.rodataoff, self.rodatasize, ".rodata", "CONST"),
+            (self.dataoff, self.datasize, ".data", "DATA"),
+            (self.bssoff, self.bsssize, ".bss", "BSS"),
+        ]:
+            builder.add_segment(off, sz, name, kind)
+
+        # read dynamic
+        self.armv7 = (f.read_from('Q', self.dynamicoff) > 0xFFFFFFFF
+                      or f.read_from('Q', self.dynamicoff + 0x10) > 0xFFFFFFFF)
+        self.offsize = 4 if self.armv7 else 8
+
+        f.seek(self.dynamicoff)
+        self.dynamic = dynamic = {}
+        for i in MULTIPLE_DTS:
+            dynamic[i] = []
+        for _ in iter_range((flatsize - self.dynamicoff) // 0x10):
+            tag, val = f.read('II' if self.armv7 else 'QQ')
+            if tag == DT.NULL:
+                break
+            if tag in MULTIPLE_DTS:
+                dynamic[tag].append(val)
+            else:
+                dynamic[tag] = val
+        builder.add_section('.dynamic', self.dynamicoff, end=f.tell())
+
+        # read .dynstr
+        if DT.STRTAB in dynamic and DT.STRSZ in dynamic:
+            f.seek(dynamic[DT.STRTAB])
+            self.dynstr = f.read(dynamic[DT.STRSZ])
+        else:
+            self.dynstr = b'\x00'
+            print('warning: no dynstr')
+
+        for startkey, szkey, name in [
+            (DT.STRTAB, DT.STRSZ, '.dynstr'),
+            (DT.INIT_ARRAY, DT.INIT_ARRAYSZ, '.init_array'),
+            (DT.FINI_ARRAY, DT.FINI_ARRAYSZ, '.fini_array'),
+            (DT.RELA, DT.RELASZ, '.rela.dyn'),
+            (DT.REL, DT.RELSZ, '.rel.dyn'),
+            (DT.JMPREL, DT.PLTRELSZ, ('.rel.plt' if self.armv7 else '.rela.plt')),
+        ]:
+            if startkey in dynamic and szkey in dynamic:
+                builder.add_section(name, dynamic[startkey], size=dynamic[szkey])
+
+        self.needed = [self.get_dynstr(i) for i in self.dynamic[DT.NEEDED]]
+
+        # load .dynsym
+        self.symbols = symbols = []
+        if DT.SYMTAB in dynamic and DT.STRTAB in dynamic:
+            f.seek(dynamic[DT.SYMTAB])
+            while True:
+                if dynamic[DT.SYMTAB] < dynamic[DT.STRTAB] <= f.tell():
+                    break
+                if self.armv7:
+                    st_name, st_value, st_size, st_info, st_other, st_shndx = f.read('IIIBBH')
+                else:
+                    st_name, st_info, st_other, st_shndx, st_value, st_size = f.read('IBBHQQ')
+                if st_name > len(self.dynstr):
+                    break
+                symbols.append(ElfSym(self.get_dynstr(st_name), st_info, st_other, st_shndx, st_value, st_size))
+            builder.add_section('.dynsym', dynamic[DT.SYMTAB], end=f.tell())
+
+        self.plt_entries = []
+        self.relocations = []
+        locations = set()
+        plt_got_end = None
+        if DT.REL in dynamic and DT.RELSZ in dynamic:
+            locations |= self.process_relocations(f, symbols, dynamic[DT.REL], dynamic[DT.RELSZ])
+
+        if DT.RELA in dynamic and DT.RELASZ in dynamic:
+            locations |= self.process_relocations(f, symbols, dynamic[DT.RELA], dynamic[DT.RELASZ])
+
+        if DT.JMPREL in dynamic and DT.PLTRELSZ in dynamic:
+            pltlocations = self.process_relocations(f, symbols, dynamic[DT.JMPREL], dynamic[DT.PLTRELSZ])
+            locations |= pltlocations
+
+            plt_got_start = min(pltlocations)
+            plt_got_end = max(pltlocations) + self.offsize
+            if DT.PLTGOT in dynamic:
+                builder.add_section('.got.plt', dynamic[DT.PLTGOT], end=plt_got_end)
+
+            if not self.armv7:
+                f.seek(0)
+                text = f.read(self.textsize)
+                last = 12
+                while True:
+                    pos = text.find(struct.pack('<I', 0xD61F0220), last)
+                    if pos == -1:
+                        break
+                    last = pos + 1
+                    if (pos % 4) != 0:
+                        continue
+                    off = pos - 12
+                    a, b, c, d = struct.unpack_from('<IIII', text, off)
+                    if d == 0xD61F0220 and (a & 0x9f00001f) == 0x90000010 and (b & 0xffe003ff) == 0xf9400211:
+                        base = off & ~0xFFF
+                        immhi = (a >> 5) & 0x7ffff
+                        immlo = (a >> 29) & 3
+                        paddr = base + ((immlo << 12) | (immhi << 14))
+                        poff = ((b >> 10) & 0xfff) << 3
+                        target = paddr + poff
+                        if plt_got_start <= target < plt_got_end:
+                            self.plt_entries.append((off, target))
+                builder.add_section('.plt', min(self.plt_entries)[0], end=max(self.plt_entries)[0] + 0x10)
+
+            # try to find the ".got" which should follow the ".got.plt"
+            if not self.isLibnx:
+                if plt_got_end is not None:
+                    good = False
+                    got_end = plt_got_end + self.offsize
+                    while got_end in locations and (DT.INIT_ARRAY not in dynamic or got_end < dynamic[DT.INIT_ARRAY]):
+                        good = True
+                        got_end += self.offsize
+
+                    if good:
+                        builder.add_section('.got', plt_got_end, end=got_end)
+        if self.isLibnx:
+            builder.add_section('.got', self.libnx_got_start, end=self.libnx_got_end)
+
+        self.sections = []
+        for start, end, name, kind in builder.flatten():
+            self.sections.append((start, end, name, kind))
+
+    def process_relocations(self, f, symbols, offset, size):
+        locations = set()
+        f.seek(offset)
+        relocsize = 8 if self.armv7 else 0x18
+        for _ in iter_range(size // relocsize):
+            # NOTE: currently assumes all armv7 relocs have no addends,
+            # and all 64-bit ones do.
+            if self.armv7:
+                offset, info = f.read('II')
+                addend = None
+                r_type = info & 0xff
+                r_sym = info >> 8
+            else:
+                offset, info, addend = f.read('QQq')
+                r_type = info & 0xffffffff
+                r_sym = info >> 32
+
+            sym = symbols[r_sym] if r_sym != 0 else None
+
+            if r_type != R_AArch64.TLSDESC and r_type != R_Arm.TLS_DESC:
+                locations.add(offset)
+            self.relocations.append((offset, r_type, sym, addend))
+        return locations
+
+    def get_dynstr(self, o):
+        return ascii_string(self.dynstr[o:self.dynstr.index(b'\x00', o)])
+
+    def get_path_or_name(self):
+        path = None
+        for off, end, name, class_ in self.sections:
+            if name == '.rodata' and 0x1000 > end - off > 8:
+                id_ = self.binfile.read_from(end - off, off).lstrip(b'\x00')
+                length = struct.unpack_from('<I', id_, 0)[0]
+                if length + 4 <= len(id_):
+                    id_ = id_[4:length + 4]
+                    return id_
+
+        self.binfile.seek(self.rodataoff)
+        as_string = self.binfile.read(self.rodatasize)
+        if path is None:
+            strs = re.findall(r'[a-z]:[\\/][ -~]{5,}\.n[rs]s', as_string, flags=re.IGNORECASE)
+            if strs:
+                return strs[-1]
+
+        return None
+
+    def get_name(self):
+        name = self.get_path_or_name()
+        if name is not None:
+            name = name.split(b'/')[-1].split(b'\\')[-1]
+            if name.lower().endswith((b'.nss', b'.nrs')):
+                name = name[:-4]
+        return name

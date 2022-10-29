@@ -1,6 +1,35 @@
 from enum import IntEnum
 
-from ..compat import iter_range
+from .compat import iter_range
+
+
+class STB(IntEnum):
+    LOCAL = 0
+    GLOBAL = 1
+    WEAK = 2
+
+
+class STT(IntEnum):
+    NOTYPE = 0
+    OBJECT = 1
+    FUNC = 2
+    SECTION = 3
+
+
+class R_AArch64(IntEnum):
+    ABS64 = 257
+    GLOB_DAT = 1025
+    JUMP_SLOT = 1026
+    RELATIVE = 1027
+    TLSDESC = 1031
+
+
+class R_Arm(IntEnum):
+    ABS32 = 2
+    TLS_DESC = 13
+    GLOB_DAT = 21
+    JUMP_SLOT = 22
+    RELATIVE = 23
 
 
 class DT(IntEnum):
@@ -19,3 +48,6 @@ class DT(IntEnum):
 
 
 MULTIPLE_DTS = {DT.NEEDED}
+
+
+

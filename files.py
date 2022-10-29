@@ -4,12 +4,83 @@ import re
 import struct
 from io import BytesIO
 
-from ..compat import ascii_string, iter_range
-from ..files.bin import BinFile
-from ..elf_sym import ElfSym
-from ..collections import SegmentBuilder
-from ..consts import *
-from ..exceptions import NxoException
+from lz4.block import decompress as uncompress
+
+from collections.builder import SegmentBuilder
+from compat import iter_range, ascii_string
+from consts import MULTIPLE_DTS, DT, R_AArch64, R_Arm
+from nxo_exceptions import NxoException
+from symbols import ElfSym
+from utils import kip1_blz_decompress
+
+
+def load_nxo(fileobj):
+    """
+    :type fileobj: Union[io.BytesIO, io.BinaryIO]
+    :return: Union[NsoFile, NroFile, KipFile]
+    """
+    fileobj.seek(0)
+    header = fileobj.read(0x14)
+
+    if header[:4] == b'NSO0':
+        return NsoFile(fileobj)
+    elif header[0x10:0x14] == b'NRO0':
+        return NroFile(fileobj)
+    elif header[:4] == b'KIP1':
+        return KipFile(fileobj)
+    else:
+        raise NxoException("not an NRO or NSO or KIP file")
+
+
+class BinFile(object):
+    def __init__(self, li):
+        """
+            :type li: io.BytesIO
+        """
+        self._f = li
+
+    def read(self, arg=None):
+        """
+            :type arg: Optional[Union[str, int]]
+        """
+        if isinstance(arg, str):
+            fmt = '<' + arg
+            size = struct.calcsize(fmt)
+            raw = self._f.read(size)
+            out = struct.unpack(fmt, raw)
+            if len(out) == 1:
+                return out[0]
+            return out
+        elif arg is None:
+            return self._f.read()
+        else:
+            out = self._f.read(arg)
+            return out
+
+    def read_from(self, arg, offset):
+        """
+            :type arg: Optional[Union[str, int]]
+            :type offset: int
+        """
+        old = self.tell()
+        try:
+            self.seek(offset)
+            out = self.read(arg)
+        finally:
+            self.seek(old)
+        return out
+
+    def seek(self, off):
+        """
+            :type off: int
+        """
+        self._f.seek(off)
+
+    def close(self):
+        self._f.close()
+
+    def tell(self):
+        return self._f.tell()
 
 
 class NxoFileBase(object):
@@ -244,3 +315,85 @@ class NxoFileBase(object):
             if name.lower().endswith((b'.nss', b'.nrs')):
                 name = name[:-4]
         return name
+
+
+class NsoFile(NxoFileBase):
+    def __init__(self, fileobj):
+        """
+            :type fileobj: io.BytesIO
+        """
+        f = BinFile(fileobj)
+
+        if f.read_from('4s', 0) != b'NSO0':
+            raise NxoException('Invalid NSO magic')
+
+        flags = f.read_from('I', 0xC)
+
+        toff, tloc, tsize = f.read_from('III', 0x10)
+        roff, rloc, rsize = f.read_from('III', 0x20)
+        doff, dloc, dsize = f.read_from('III', 0x30)
+
+        tfilesize, rfilesize, dfilesize = f.read_from('III', 0x60)
+        bsssize = f.read_from('I', 0x3C)
+
+        # print('load text: ')
+        text = (uncompress(f.read_from(tfilesize, toff), uncompressed_size=tsize), None, tloc, tsize) if flags & 1 else (f.read_from(tfilesize, toff), toff, tloc, tsize)
+        ro   = (uncompress(f.read_from(rfilesize, roff), uncompressed_size=rsize), None, rloc, rsize) if flags & 2 else (f.read_from(rfilesize, roff), roff, rloc, rsize)
+        data = (uncompress(f.read_from(dfilesize, doff), uncompressed_size=dsize), None, dloc, dsize) if flags & 4 else (f.read_from(dfilesize, doff), doff, dloc, dsize)
+
+        super(NsoFile, self).__init__(text, ro, data, bsssize)
+
+
+class NroFile(NxoFileBase):
+    def __init__(self, fileobj):
+        """
+            :type fileobj: io.BytesIO
+        """
+        f = BinFile(fileobj)
+
+        if f.read_from('4s', 0x10) != b'NRO0':
+            raise NxoException('Invalid NRO magic')
+
+        f.seek(0x20)
+
+        tloc, tsize = f.read('II')
+        rloc, rsize = f.read('II')
+        dloc, dsize = f.read('II')
+        bsssize = f.read_from('I', 0x28)
+
+        text = (f.read_from(tsize, tloc), tloc, tloc, tsize)
+        ro   = (f.read_from(rsize, rloc), rloc, rloc, rsize)
+        data = (f.read_from(dsize, dloc), dloc, dloc, dsize)
+
+        super(NroFile, self).__init__(text, ro, data, bsssize)
+
+
+class KipFile(NxoFileBase):
+    def __init__(self, fileobj):
+        """
+            :type fileobj: io.BytesIO
+        """
+        f = BinFile(fileobj)
+
+        if f.read_from('4s', 0) != b'KIP1':
+            raise NxoException('Invalid KIP magic')
+
+        flags = f.read_from('b', 0x1F)
+
+        tloc, tsize, tfilesize = f.read_from('III', 0x20)
+        rloc, rsize, rfilesize = f.read_from('III', 0x30)
+        dloc, dsize, dfilesize = f.read_from('III', 0x40)
+
+        toff = 0x100
+        roff = toff + tfilesize
+        doff = roff + rfilesize
+
+        bsssize = f.read_from('I', 0x54)
+        print('bss size 0x%x' % bsssize)
+
+        print('load segments')
+        text = (kip1_blz_decompress(f.read_from(tfilesize, toff)), None, tloc, tsize) if flags & 1 else (f.read_from(tfilesize, toff), toff, tloc, tsize)
+        ro   = (kip1_blz_decompress(f.read_from(rfilesize, roff)), None, rloc, rsize) if flags & 2 else (f.read_from(rfilesize, roff), roff, rloc, rsize)
+        data = (kip1_blz_decompress(f.read_from(dfilesize, doff)), None, dloc, dsize) if flags & 4 else (f.read_from(dfilesize, doff), doff, dloc, dsize)
+
+        super(KipFile, self).__init__(text, ro, data, bsssize)

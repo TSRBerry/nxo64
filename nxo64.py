@@ -116,7 +116,7 @@ else:
         segm = idaapi.get_segm_by_name("UNDEF")
         segm.type = idaapi.SEG_XTRN
         idaapi.update_segm(segm)
-        for i,s in enumerate(f.symbols):
+        for i, s in enumerate(f.symbols):
             if not s.shndx and s.name:
                 idaapi.create_data(undef_ea, idc.FF_QWORD, 8, idaapi.BADADDR)
                 idaapi.force_name(undef_ea, s.name)

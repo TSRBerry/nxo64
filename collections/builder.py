@@ -1,6 +1,4 @@
-from .range import Range
-from .section import Section
-from .segment import Segment
+from . import Range, Section, Segment
 from ..utils import suffixed_name
 
 

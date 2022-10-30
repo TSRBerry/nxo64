@@ -294,10 +294,11 @@ class NxoFileBase(object):
         for off, end, name, class_ in self.sections:
             if name == '.rodata' and 0x1000 > end - off > 8:
                 id_ = self.binfile.read_from(end - off, off).lstrip(b'\x00')
-                length = struct.unpack_from('<I', id_, 0)[0]
-                if length + 4 <= len(id_):
-                    id_ = id_[4:length + 4]
-                    return id_
+                if len(id_) > 0:
+                    length = struct.unpack_from('<I', id_, 0)[0]
+                    if length + 4 <= len(id_):
+                        id_ = id_[4:length + 4]
+                        return id_
 
         self.binfile.seek(self.rodataoff)
         as_string = self.binfile.read(self.rodatasize)

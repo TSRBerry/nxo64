@@ -303,7 +303,7 @@ class NxoFileBase(object):
         self.binfile.seek(self.rodataoff)
         as_string = self.binfile.read(self.rodatasize)
         if path is None:
-            strs = re.findall(r'[a-z]:[\\/][ -~]{5,}\.n[rs]s', as_string, flags=re.IGNORECASE)
+            strs = re.findall(r'[a-z]:[\\/][ -~]{5,}\.n[rs]s'.encode(), as_string, flags=re.IGNORECASE)
             if strs:
                 return strs[-1]
 

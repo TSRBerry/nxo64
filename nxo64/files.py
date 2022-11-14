@@ -3,6 +3,7 @@ from __future__ import print_function
 import re
 import struct
 from io import BytesIO
+from enum import IntFlag
 
 from lz4.block import decompress as uncompress
 
@@ -12,6 +13,15 @@ from .consts import MULTIPLE_DTS, DT, R_AArch64, R_Arm
 from .nxo_exceptions import NxoException
 from .symbols import ElfSym
 from .utils import kip1_blz_decompress
+
+
+class NxoFlags(IntFlag):
+    TEXT_COMPRESSED = 1
+    RO_COMPRESSED = 2
+    DATA_COMPRESSED = 4
+    TEXT_HASH = 8
+    RO_HASH = 16
+    DATA_HASH = 32
 
 
 def load_nxo(fileobj):
@@ -86,6 +96,12 @@ class BinFile(object):
 class NxoFileBase(object):
     # segment = (content, file offset, vaddr, vsize)
     def __init__(self, text, ro, data, bsssize):
+        """
+            :type text: Tuple[bytes, int, int, int]
+            :type ro: Tuple[bytes, int, int, int]
+            :type data: Tuple[bytes, int, int, int]
+            :type bsssize: int
+        """
         self.text = text
         self.ro = ro
         self.data = data
@@ -263,6 +279,13 @@ class NxoFileBase(object):
             self.sections.append((start, end, name, kind))
 
     def process_relocations(self, f, symbols, offset, size):
+        """
+            :type f: BinFile
+            :type symbols: list[ElfSym]
+            :type offset: int
+            :type size: int
+            :return: set[int]
+        """
         locations = set()
         f.seek(offset)
         relocsize = 8 if self.armv7 else 0x18
@@ -287,9 +310,15 @@ class NxoFileBase(object):
         return locations
 
     def get_dynstr(self, o):
+        """
+            :type o: int
+        """
         return ascii_string(self.dynstr[o:self.dynstr.index(b'\x00', o)])
 
     def get_path_or_name(self):
+        """
+            :return: Optional[bytes]
+        """
         path = None
         for off, end, name, class_ in self.sections:
             if name == '.rodata' and 0x1000 > end - off > 8:
@@ -310,6 +339,9 @@ class NxoFileBase(object):
         return None
 
     def get_name(self):
+        """
+            :return: Optional[bytes]
+        """
         name = self.get_path_or_name()
         if name is not None:
             name = name.split(b'/')[-1].split(b'\\')[-1]
@@ -328,7 +360,7 @@ class NsoFile(NxoFileBase):
         if f.read_from('4s', 0) != b'NSO0':
             raise NxoException('Invalid NSO magic')
 
-        flags = f.read_from('I', 0xC)
+        flags = NxoFlags(f.read_from('I', 0xC))
 
         toff, tloc, tsize = f.read_from('III', 0x10)
         roff, rloc, rsize = f.read_from('III', 0x20)
@@ -338,9 +370,9 @@ class NsoFile(NxoFileBase):
         bsssize = f.read_from('I', 0x3C)
 
         # print('load text: ')
-        text = (uncompress(f.read_from(tfilesize, toff), uncompressed_size=tsize), None, tloc, tsize) if flags & 1 else (f.read_from(tfilesize, toff), toff, tloc, tsize)
-        ro   = (uncompress(f.read_from(rfilesize, roff), uncompressed_size=rsize), None, rloc, rsize) if flags & 2 else (f.read_from(rfilesize, roff), roff, rloc, rsize)
-        data = (uncompress(f.read_from(dfilesize, doff), uncompressed_size=dsize), None, dloc, dsize) if flags & 4 else (f.read_from(dfilesize, doff), doff, dloc, dsize)
+        text = (uncompress(f.read_from(tfilesize, toff), uncompressed_size=tsize), None, tloc, tsize) if NxoFlags.TEXT_COMPRESSED in flags else (f.read_from(tfilesize, toff), toff, tloc, tsize)
+        ro   = (uncompress(f.read_from(rfilesize, roff), uncompressed_size=rsize), None, rloc, rsize) if NxoFlags.RO_COMPRESSED in flags else (f.read_from(rfilesize, roff), roff, rloc, rsize)
+        data = (uncompress(f.read_from(dfilesize, doff), uncompressed_size=dsize), None, dloc, dsize) if NxoFlags.DATA_COMPRESSED in flags else (f.read_from(dfilesize, doff), doff, dloc, dsize)
 
         super(NsoFile, self).__init__(text, ro, data, bsssize)
 
@@ -379,7 +411,7 @@ class KipFile(NxoFileBase):
         if f.read_from('4s', 0) != b'KIP1':
             raise NxoException('Invalid KIP magic')
 
-        flags = f.read_from('b', 0x1F)
+        flags = NxoFlags(f.read_from('b', 0x1F))
 
         tloc, tsize, tfilesize = f.read_from('III', 0x20)
         rloc, rsize, rfilesize = f.read_from('III', 0x30)
@@ -393,8 +425,8 @@ class KipFile(NxoFileBase):
         print('bss size 0x%x' % bsssize)
 
         print('load segments')
-        text = (kip1_blz_decompress(f.read_from(tfilesize, toff)), None, tloc, tsize) if flags & 1 else (f.read_from(tfilesize, toff), toff, tloc, tsize)
-        ro   = (kip1_blz_decompress(f.read_from(rfilesize, roff)), None, rloc, rsize) if flags & 2 else (f.read_from(rfilesize, roff), roff, rloc, rsize)
-        data = (kip1_blz_decompress(f.read_from(dfilesize, doff)), None, dloc, dsize) if flags & 4 else (f.read_from(dfilesize, doff), doff, dloc, dsize)
+        text = (kip1_blz_decompress(f.read_from(tfilesize, toff)), None, tloc, tsize) if NxoFlags.TEXT_COMPRESSED in flags else (f.read_from(tfilesize, toff), toff, tloc, tsize)
+        ro   = (kip1_blz_decompress(f.read_from(rfilesize, roff)), None, rloc, rsize) if NxoFlags.RO_COMPRESSED in flags else (f.read_from(rfilesize, roff), roff, rloc, rsize)
+        data = (kip1_blz_decompress(f.read_from(dfilesize, doff)), None, dloc, dsize) if NxoFlags.DATA_COMPRESSED in flags else (f.read_from(dfilesize, doff), doff, dloc, dsize)
 
         super(KipFile, self).__init__(text, ro, data, bsssize)

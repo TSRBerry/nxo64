@@ -1,4 +1,6 @@
 class ElfSym(object):
+    resolved = None
+
     def __init__(self, name, info, other, shndx, value, size):
         """
             :type name: str

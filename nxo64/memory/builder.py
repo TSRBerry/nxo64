@@ -1,4 +1,4 @@
-from . import Range, Section, Segment
+from . import Range, Section, Segment, SegmentKind
 from ..utils import suffixed_name
 
 
@@ -10,7 +10,7 @@ class SegmentBuilder(object):
             :type start: int
             :type size: int
             :type name: str
-            :type kind:
+            :type kind: SegmentKind
         """
         r = Range(start, size)
         for i in self.segments:

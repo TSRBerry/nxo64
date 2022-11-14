@@ -1,3 +1,13 @@
+from enum import StrEnum
+
+
+class SegmentKind(StrEnum):
+    CODE = "CODE"
+    CONST = "CONST"
+    DATA = "DATA"
+    BSS = "BSS"
+
+
 class Range(object):
     def __init__(self, start, size):
         """
@@ -53,7 +63,7 @@ class Segment(object):
         """
             :type r: Range
             :type name: str
-            :type kind:
+            :type kind: SegmentKind
         """
         self.range = r
         self.name = name

@@ -7,6 +7,7 @@ from enum import IntFlag
 
 from lz4.block import decompress as uncompress
 
+from .memory import SegmentKind
 from .memory.builder import SegmentBuilder
 from .compat import iter_range, ascii_string
 from .consts import MULTIPLE_DTS, DT, R_AArch64, R_Arm
@@ -154,10 +155,10 @@ class NxoFileBase(object):
 
         self.segment_builder = builder = SegmentBuilder()
         for off, sz, name, kind in [
-            (self.textoff, self.textsize, ".text", "CODE"),
-            (self.rodataoff, self.rodatasize, ".rodata", "CONST"),
-            (self.dataoff, self.datasize, ".data", "DATA"),
-            (self.bssoff, self.bsssize, ".bss", "BSS"),
+            (self.textoff, self.textsize, ".text", SegmentKind.CODE),
+            (self.rodataoff, self.rodatasize, ".rodata", SegmentKind.CONST),
+            (self.dataoff, self.datasize, ".data", SegmentKind.DATA),
+            (self.bssoff, self.bsssize, ".bss", SegmentKind.BSS),
         ]:
             builder.add_segment(off, sz, name, kind)
 

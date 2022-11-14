@@ -19,6 +19,7 @@ from nxo64.compat import *
 from nxo64.consts import *
 
 from nxo64.files import load_nxo
+from nxo64.memory import SegmentKind
 
 try:
     import idaapi
@@ -89,16 +90,16 @@ else:
 
         for start, end, name, kind in f.sections:
             if name.startswith('.got'):
-                kind = 'CONST'
+                kind = SegmentKind.CONST
             idaapi.add_segm(0, loadbase+start, loadbase+end, name, kind)
             segm = idaapi.get_segm_by_name(name)
-            if kind == 'CONST':
+            if kind == SegmentKind.CONST:
                 segm.perm = idaapi.SEGPERM_READ
-            elif kind == 'CODE':
+            elif kind == SegmentKind.CODE:
                 segm.perm = idaapi.SEGPERM_READ | idaapi.SEGPERM_EXEC
-            elif kind == 'DATA':
+            elif kind == SegmentKind.DATA:
                 segm.perm = idaapi.SEGPERM_READ | idaapi.SEGPERM_WRITE
-            elif kind == 'BSS':
+            elif kind == SegmentKind.BSS:
                 segm.perm = idaapi.SEGPERM_READ | idaapi.SEGPERM_WRITE
             idaapi.update_segm(segm)
             idaapi.set_segm_addressing(segm, 1 if f.armv7 else 2)

@@ -6,9 +6,9 @@ nxo64 is a python (2 & 3) library for reading NSO / NRO files and an IDAPython l
 Installation
 ============
 
-Install the `requirements.txt` modules so that IDAPython can import them.
+Install the modules from `requirements.txt` so IDAPython can import them.
 
-Copy `nxo64.py` into IDA's `loaders` directory.
+Copy `nxo64-ida.py` and `nxo64` into IDA's `loaders` directory.
 
 Credits
 =======

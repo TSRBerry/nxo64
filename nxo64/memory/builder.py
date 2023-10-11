@@ -3,7 +3,8 @@ from ..utils import suffixed_name
 
 
 class SegmentBuilder(object):
-    segments = []  # type: list[Segment]
+    def __init__(self):
+        self.segments = []  # type: list[Segment]
 
     def add_segment(self, start, size, name, kind):
         """

@@ -1,4 +1,7 @@
-from enum import IntEnum
+try:
+    from enum import IntEnum
+except ImportError:
+    from aenum import IntEnum
 
 from .compat import iter_range
 

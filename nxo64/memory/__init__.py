@@ -1,4 +1,14 @@
-from enum import StrEnum
+try:
+    # StrEnum is new in python 3.11
+    from enum import StrEnum
+except ImportError:
+    try:
+        from enum import Enum
+
+        class StrEnum(str, Enum):
+            pass
+    except ImportError:
+        from aenum import StrEnum
 
 
 class SegmentKind(StrEnum):
@@ -57,8 +67,6 @@ class Section(object):
 
 
 class Segment(object):
-    sections = []  # type: list[Section]
-
     def __init__(self, r, name, kind):
         """
         :type r: Range
@@ -68,6 +76,7 @@ class Segment(object):
         self.range = r
         self.name = name
         self.kind = kind
+        self.sections = []  # type: list[Section]
 
     def add_section(self, s):
         """

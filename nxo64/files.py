@@ -238,6 +238,39 @@ class NxoFileBase(object):
             if startkey in dynamic and szkey in dynamic:
                 builder.add_section(name, dynamic[startkey], size=dynamic[szkey])
 
+        # TODO
+        # build_id = content.find('\x04\x00\x00\x00\x14\x00\x00\x00\x03\x00\x00\x00GNU\x00')
+        # if build_id >= 0:
+        #    builder.add_section('.note.gnu.build-id', build_id, size=0x24)
+        # else:
+        #    build_id = content.index('\x04\x00\x00\x00\x10\x00\x00\x00\x03\x00\x00\x00GNU\x00')
+        #    if build_id >= 0:
+        #        builder.add_section('.note.gnu.build-id', build_id, size=0x20)
+
+        if DT.HASH in dynamic:
+            hash_start = dynamic[DT.HASH]
+            f.seek(hash_start)
+            nbucket, nchain = f.read('II')
+            f.skip(nbucket * 4)
+            f.skip(nchain * 4)
+            hash_end = f.tell()
+            builder.add_section('.hash', hash_start, end=hash_end)
+
+        if DT.GNU_HASH in dynamic:
+            gnuhash_start = dynamic[DT.GNU_HASH]
+            f.seek(gnuhash_start)
+            nbuckets, symoffset, bloom_size, bloom_shift = f.read('IIII')
+            f.skip(bloom_size * self.offsize)
+            buckets = [f.read('I') for _ in range(nbuckets)]
+
+            max_symix = max(buckets) if buckets else 0
+            if max_symix >= symoffset:
+                f.skip((max_symix - symoffset) * 4)
+                while (f.read('I') & 1) == 0:
+                    pass
+            gnuhash_end = f.tell()
+            builder.add_section('.gnu.hash', gnuhash_start, end=gnuhash_end)
+
         self.needed = [self.get_dynstr(i) for i in self.dynamic[DT.NEEDED]]
 
         # load .dynsym
@@ -312,6 +345,30 @@ class NxoFileBase(object):
                         builder.add_section('.got', plt_got_end, end=got_end)
         if self.isLibnx:
             builder.add_section('.got', self.libnx_got_start, end=self.libnx_got_end)
+
+        self.eh_table = []
+        if not self.armv7:
+            f.seek(self.unwindoff)
+            version, eh_frame_ptr_enc, fde_count_enc, table_enc = f.read('BBBB')
+            if not any(i == 0xff for i in (eh_frame_ptr_enc, fde_count_enc, table_enc)):  # DW_EH_PE_omit
+                # assert eh_frame_ptr_enc == 0x1B # DW_EH_PE_pcrel | DW_EH_PE_sdata4
+                # assert fde_count_enc == 0x03    # DW_EH_PE_absptr | DW_EH_PE_udata4
+                # assert table_enc == 0x3B        # DW_EH_PE_datarel | DW_EH_PE_sdata4
+                if eh_frame_ptr_enc == 0x1B and fde_count_enc == 0x03 and table_enc == 0x3B:
+                    base_offset = f.tell()
+                    eh_frame = base_offset + f.read('i')
+
+                    fde_count = f.read('I')
+                    # assert 8 * fde_count == self.unwindend - f.tell()
+                    if 8 * fde_count == self.unwindend - f.tell():
+                        for i in range(fde_count):
+                            pc = self.unwindoff + f.read('i')
+                            entry = self.unwindoff + f.read('i')
+                            self.eh_table.append((pc, entry))
+
+                    # TODO: we miss the last one, but better than nothing
+                    last_entry = sorted(self.eh_table, key=lambda x: x[1])[-1][1]
+                    builder.add_section('.eh_frame', eh_frame, end=last_entry)
 
         self.sections = []
         for start, end, name, kind in builder.flatten():

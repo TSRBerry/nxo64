@@ -47,6 +47,21 @@ def load_nxo(fileobj):
         raise NxoException("not an NRO or NSO or KIP file")
 
 
+def get_file_size(f):
+    """
+    :type f: io.BytesIO | BinFile
+    :rtype: int
+    """
+    if isinstance(f, BinFile):
+        return f.size()
+    else:
+        ptell = f.tell()
+        f.seek(0, 2)
+        filesize = f.tell()
+        f.seek(ptell)
+        return filesize
+
+
 class BinFile(object):
     def __init__(self, li):
         """
@@ -73,6 +88,18 @@ class BinFile(object):
             out = self._f.read(arg)
             return out
 
+    def read_to_end(self):
+        """
+        :rtype: bytes | tuple[Any, ...]
+        """
+        return self.read(self.size() - self.tell())
+
+    def size(self):
+        """
+        :rtype: int
+        """
+        return get_file_size(self._f)
+
     def read_from(self, arg, offset):
         """
         :param arg: str | int | None
@@ -91,6 +118,9 @@ class BinFile(object):
         :type off: int
         """
         self._f.seek(off)
+
+    def skip(self, dist):
+        self.seek(self.tell() + dist)
 
     def close(self):
         self._f.close()

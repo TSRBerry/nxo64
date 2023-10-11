@@ -217,7 +217,9 @@ class NxoFileBase(object):
                 dynamic[tag].append(val)
             else:
                 dynamic[tag] = val
-        builder.add_section('.dynamic', self.dynamicoff, end=f.tell())
+        self.dynamicsize = f.tell() - self.dynamicoff
+        builder.add_section('.dynamic', self.dynamicoff, end=self.dynamicoff + self.dynamicsize)
+        builder.add_section('.eh_frame_hdr', self.unwindoff, end=self.unwindend)
 
         # read .dynstr
         if DT.STRTAB in dynamic and DT.STRSZ in dynamic:
@@ -330,20 +332,26 @@ class NxoFileBase(object):
                         target = paddr + poff
                         if plt_got_start <= target < plt_got_end:
                             self.plt_entries.append((off, target))
-                builder.add_section('.plt', min(self.plt_entries)[0], end=max(self.plt_entries)[0] + 0x10)
+                if len(self.plt_entries) > 0:
+                    builder.add_section('.plt', min(self.plt_entries)[0], end=max(self.plt_entries)[0] + 0x10)
 
+        if not self.isLibnx:
             # try to find the ".got" which should follow the ".got.plt"
-            if not self.isLibnx:
-                if plt_got_end is not None:
-                    good = False
-                    got_end = plt_got_end + self.offsize
-                    while got_end in locations and (DT.INIT_ARRAY not in dynamic or got_end < dynamic[DT.INIT_ARRAY]):
-                        good = True
-                        got_end += self.offsize
+            good = False
+            got_start = (plt_got_end if plt_got_end is not None else self.dynamicoff + self.dynamicsize)
+            got_end = self.offsize + got_start
+            while (got_end in locations or (plt_got_end is None and got_end < dynamic[DT.INIT_ARRAY])) and (
+                    DT.INIT_ARRAY not in dynamic
+                    or got_end < dynamic[DT.INIT_ARRAY]
+                    or dynamic[DT.INIT_ARRAY] < got_start):
+                good = True
+                got_end += self.offsize
 
-                    if good:
-                        builder.add_section('.got', plt_got_end, end=got_end)
-        if self.isLibnx:
+            if good:
+                self.got_start = got_start
+                self.got_end = got_end
+                builder.add_section('.got', self.got_start, end=self.got_end)
+        else:
             builder.add_section('.got', self.libnx_got_start, end=self.libnx_got_end)
 
         self.eh_table = []

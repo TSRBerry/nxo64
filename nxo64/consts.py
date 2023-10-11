@@ -19,6 +19,9 @@ class STT(IntEnum):
     SECTION = 3
 
 
+R_FAKE_RELR = -1
+
+
 class R_AArch64(IntEnum):
     ABS64 = 257
     GLOB_DAT = 1025
@@ -40,6 +43,10 @@ class DT(IntEnum):
      RELAENT, STRSZ, SYMENT, INIT, FINI, SONAME, RPATH, SYMBOLIC, REL,
      RELSZ, RELENT, PLTREL, DEBUG, TEXTREL, JMPREL, BIND_NOW, INIT_ARRAY,
      FINI_ARRAY, INIT_ARRAYSZ, FINI_ARRAYSZ, RUNPATH, FLAGS) = iter_range(31)
+
+    RELRSZ = 0x23
+    RELR = 0x24
+    RELRENT = 0x25
 
     GNU_HASH = 0x6ffffef5
     VERSYM = 0x6ffffff0

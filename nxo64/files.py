@@ -14,7 +14,7 @@ from lz4.block import decompress as uncompress
 from .memory import SegmentKind
 from .memory.builder import SegmentBuilder
 from .compat import iter_range, ascii_string
-from .consts import MULTIPLE_DTS, DT, R_AArch64, R_Arm
+from .consts import MULTIPLE_DTS, DT, R_AArch64, R_Arm, R_FAKE_RELR
 from .nxo_exceptions import NxoException
 from .symbols import ElfSym
 from .utils import kip1_blz_decompress
@@ -235,6 +235,7 @@ class NxoFileBase(object):
             (DT.FINI_ARRAY, DT.FINI_ARRAYSZ, '.fini_array'),
             (DT.RELA, DT.RELASZ, '.rela.dyn'),
             (DT.REL, DT.RELSZ, '.rel.dyn'),
+            (DT.RELR, DT.RELRSZ, '.relr.dyn'),
             (DT.JMPREL, DT.PLTRELSZ, ('.rel.plt' if self.armv7 else '.rela.plt')),
         ]:
             if startkey in dynamic and szkey in dynamic:
@@ -301,6 +302,9 @@ class NxoFileBase(object):
         if DT.RELA in dynamic and DT.RELASZ in dynamic:
             locations |= self.process_relocations(f, symbols, dynamic[DT.RELA], dynamic[DT.RELASZ])
 
+        if DT.RELR in dynamic:
+            locations |= self.process_relocations_relr(f, dynamic[DT.RELR], dynamic[DT.RELRSZ])
+
         if DT.JMPREL in dynamic and DT.PLTRELSZ in dynamic:
             pltlocations = self.process_relocations(f, symbols, dynamic[DT.JMPREL], dynamic[DT.PLTRELSZ])
             locations |= pltlocations
@@ -341,8 +345,7 @@ class NxoFileBase(object):
             got_start = (plt_got_end if plt_got_end is not None else self.dynamicoff + self.dynamicsize)
             got_end = self.offsize + got_start
             while (got_end in locations or (plt_got_end is None and got_end < dynamic[DT.INIT_ARRAY])) and (
-                    DT.INIT_ARRAY not in dynamic
-                    or got_end < dynamic[DT.INIT_ARRAY]
+                    DT.INIT_ARRAY not in dynamic or got_end < dynamic[DT.INIT_ARRAY]
                     or dynamic[DT.INIT_ARRAY] < got_start):
                 good = True
                 got_end += self.offsize
@@ -411,6 +414,29 @@ class NxoFileBase(object):
             if r_type != R_AArch64.TLSDESC and r_type != R_Arm.TLS_DESC:
                 locations.add(offset)
             self.relocations.append((offset, r_type, sym, addend))
+        return locations
+
+    def process_relocations_relr(self, f, offset, size):
+        locations = set()
+        f.seek(offset)
+        relocsize = 8
+        for _ in iter_range(size / relocsize):
+            entry = f.read('Q')
+            if entry & 1:
+                entry >>= 1
+                i = 0
+                while i < (relocsize * 8) - 1:
+                    if entry & (1 << i):
+                        locations.add(where + i * relocsize)
+                        self.relocations.append((where + i * relocsize, R_FAKE_RELR, None, 0))
+                    i += 1
+                where += relocsize * ((relocsize * 8) - 1)
+            else:
+                # Where
+                where = entry
+                locations.add(where)
+                self.relocations.append((where, R_FAKE_RELR, None, 0))
+                where += relocsize
         return locations
 
     def get_dynstr(self, o):

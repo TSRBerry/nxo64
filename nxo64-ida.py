@@ -161,6 +161,12 @@ else:
                 idaapi.put_qword(target, loadbase + addend)
                 if addend < f.textsize:
                     funcs.add(loadbase + addend)
+            elif r_type == R_FAKE_RELR:
+                assert not f.armv7  # TODO
+                addend = idaapi.get_qword(target)
+                idaapi.put_qword(target, addend + loadbase)
+                if addend < f.textsize:
+                    funcs.add(loadbase + addend)
             else:
                 print('TODO r_type %d' % (r_type,))
             ida_make_offset(f, target)

@@ -7,10 +7,10 @@ class SegmentBuilder(object):
 
     def add_segment(self, start, size, name, kind):
         """
-            :type start: int
-            :type size: int
-            :type name: str
-            :type kind: SegmentKind
+        :type start: int
+        :type size: int
+        :type name: str
+        :type kind: SegmentKind
         """
         r = Range(start, size)
         for i in self.segments:
@@ -19,10 +19,10 @@ class SegmentBuilder(object):
 
     def add_section(self, name, start, end=None, size=None):
         """
-            :type name: str
-            :type start: int
-            :type end: int
-            :type size: int
+        :type name: str
+        :type start: int
+        :type end: int
+        :type size: int
         """
         assert end is None or size is None
         if size == 0:

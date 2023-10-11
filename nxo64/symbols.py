@@ -3,12 +3,12 @@ class ElfSym(object):
 
     def __init__(self, name, info, other, shndx, value, size):
         """
-            :type name: str
-            :type info: int
-            :type other: int
-            :type shndx: int
-            :type value: int
-            :type size: int
+        :type name: str
+        :type info: int
+        :type other: int
+        :type shndx: int
+        :type value: int
+        :type size: int
         """
         self.name = name
         self.shndx = shndx

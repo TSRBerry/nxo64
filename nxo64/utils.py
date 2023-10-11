@@ -5,7 +5,7 @@ from .compat import bytes_to_list, iter_range, list_to_bytes
 
 def kip1_blz_decompress(compressed):
     """
-        :type compressed: bytearray
+    :type compressed: bytearray
     """
     compressed_size, init_index, uncompressed_addl_size = struct.unpack('<III', compressed[-0xC:])
     decompressed = compressed[:] + b'\x00' * uncompressed_addl_size
@@ -53,7 +53,7 @@ def suffixed_name(name, suffix):
     """
     :type name: str
     :type suffix: int
-    :return: str
+    :rtype: str
     """
     if suffix == 0:
         return name

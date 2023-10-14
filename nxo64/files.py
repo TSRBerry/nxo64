@@ -420,7 +420,7 @@ class NxoFileBase(object):
         locations = set()
         f.seek(offset)
         relocsize = 8
-        for _ in iter_range(size / relocsize):
+        for _ in iter_range(size // relocsize):
             entry = f.read('Q')
             if entry & 1:
                 entry >>= 1

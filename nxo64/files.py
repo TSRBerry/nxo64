@@ -371,7 +371,7 @@ class NxoFileBase(object):
 
                     fde_count = f.read('I')
                     # assert 8 * fde_count == self.unwindend - f.tell()
-                    if 8 * fde_count == self.unwindend - f.tell():
+                    if 8 * fde_count <= self.unwindend - f.tell():
                         for i in range(fde_count):
                             pc = self.unwindoff + f.read('i')
                             entry = self.unwindoff + f.read('i')

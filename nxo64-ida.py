@@ -154,9 +154,12 @@ else:
             elif r_type == R_Arm.RELATIVE:
                 idaapi.put_dword(target, idaapi.get_dword(target) + loadbase)
             elif r_type in (R_AArch64.GLOB_DAT, R_AArch64.JUMP_SLOT, R_AArch64.ABS64):
-                idaapi.put_qword(target, sym.resolved + addend)
-                if addend == 0:
-                    got_name_lookup[offset] = sym.name
+                if not sym:
+                    print('error: relocation at %X failed' % target)
+                else:
+                    idaapi.put_qword(target, sym.resolved + addend)
+                    if addend == 0:
+                        got_name_lookup[offset] = sym.name
             elif r_type == R_AArch64.RELATIVE:
                 idaapi.put_qword(target, loadbase + addend)
                 if addend < f.textsize:

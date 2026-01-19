@@ -1,3 +1,9 @@
+# Repository moved
+
+You can find the new repository here: https://codeberg.org/TSRBerry/nxo64.git
+
+---
+
 nxo64
 ========
 
